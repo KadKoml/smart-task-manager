@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Register • Smart Task Manager</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 420px; margin: 40px auto; padding: 0 16px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 18px; }
+    input, select, button { width: 100%; padding: 10px; margin-top: 10px; }
+    button { cursor: pointer; }
+    .row { display:flex; gap:10px; }
+    .row > * { flex: 1; }
+    .msg { margin-top: 12px; }
+    a { text-decoration: none; }
+  </style>
+</head>
+<body>
+  <h2>Smart Task Manager — Register</h2>
+
+  <div class="card">
+    <input id="username" placeholder="Username" />
+    <input id="email" placeholder="Email" />
+    <input id="password" placeholder="Password (min 6)" type="password" />
+    <button id="btn">Create account</button>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <p>Already have account? <a href="/login.html">Login</a></p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+$("btn").addEventListener("click", async () => {
+  $("msg").textContent = "Loading...";
+
+  const payload = {
+    username: $("username").value.trim(),
+    email: $("email").value.trim(),
+    password: $("password").value
+  };
+
+  try {
+    const r = await fetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.message || "Register failed");
+
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
+
+    location.href = "/tasks.html";
+  } catch (e) {
+    $("msg").textContent = "❌ " + e.message;
+  }
+});
+</script>
+</body>
+</html>

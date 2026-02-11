@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tasks • Smart Task Manager</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 30px auto; padding: 0 16px; }
+    .top { display:flex; justify-content: space-between; align-items:center; gap:12px; flex-wrap: wrap; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 14px; margin-top: 12px; }
+    input, select, button { padding: 10px; }
+    button { cursor: pointer; }
+    .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .tasks { margin-top: 14px; }
+    .task { border: 1px solid #eee; border-radius: 12px; padding: 12px; display:flex; justify-content: space-between; gap: 12px; }
+    .muted { color:#666; font-size: 13px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    .badge { padding: 4px 8px; border-radius: 999px; border: 1px solid #ddd; font-size: 12px; }
+    .right { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .danger { border-color: #ffb3b3; }
+    .ok { color: #0a7; }
+    .bad { color: #c00; }
+    .paging { display:flex; gap:8px; align-items:center; margin-top: 12px; }
+    @media (max-width: 700px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+
+<div class="top">
+  <div>
+    <h2 style="margin:0">Smart Task Manager</h2>
+    <div class="muted" id="who"></div>
+  </div>
+  <div class="row">
+    <button id="btnOverdue">Smart: check overdue</button>
+    <button id="btnLogout">Logout</button>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>Create task</h3>
+    <input id="title" placeholder="Title" style="width:100%" />
+    <input id="description" placeholder="Description" style="width:100%" />
+    <div class="row" style="margin-top:10px">
+      <select id="priority">
+        <option value="low">low</option>
+        <option value="medium" selected>medium</option>
+        <option value="high">high</option>
+      </select>
+      <select id="status">
+        <option value="pending" selected>pending</option>
+        <option value="in_progress">in_progress</option>
+        <option value="done">done</option>
+      </select>
+      <input id="dueDate" type="date" />
+    </div>
+    <button id="btnCreate" style="margin-top:10px; width:100%">Add</button>
+    <div id="msg" class="muted" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h3>Search / filters</h3>
+    <input id="q" placeholder="Search text..." style="width:100%" />
+    <div class="row" style="margin-top:10px">
+      <select id="fStatus">
+        <option value="">status: any</option>
+        <option value="pending">pending</option>
+        <option value="in_progress">in_progress</option>
+        <option value="done">done</option>
+      </select>
+
+      <select id="fPriority">
+        <option value="">priority: any</option>
+        <option value="low">low</option>
+        <option value="medium">medium</option>
+        <option value="high">high</option>
+      </select>
+
+      <select id="sort">
+        <option value="newest" selected>newest</option>
+        <option value="oldest">oldest</option>
+        <option value="dueSoon">dueSoon</option>
+        <option value="dueLate">dueLate</option>
+      </select>
+
+      <select id="limit">
+        <option value="5" selected>limit 5</option>
+        <option value="10">limit 10</option>
+      </select>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <button id="btnApply">Apply</button>
+      <button id="btnReset">Reset</button>
+    </div>
+
+    <div class="paging">
+      <button id="prev">Prev</button>
+      <span class="muted" id="pageInfo"></span>
+      <button id="next">Next</button>
+    </div>
+  </div>
+</div>
+
+<div class="tasks" id="tasks"></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+const token = localStorage.getItem("token");
+const user = JSON.parse(localStorage.getItem("user") || "null");
+
+if (!token) location.href = "/login.html";
+
+$("who").textContent = user ? `${user.username} (${user.role}) • ${user.email}` : "";
+
+let page = 1;
+
+function authHeaders() {
+  return {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + token
+  };
+}
+
+function formatDate(d) {
+  if (!d) return "-";
+  const x = new Date(d);
+  if (isNaN(x.getTime())) return "-";
+  return x.toISOString().slice(0,10);
+}
+
+function badge(text) {
+  return `<span class="badge">${text}</span>`;
+}
+
+async function loadTasks() {
+  $("msg").textContent = "";
+  const params = new URLSearchParams();
+  params.set("page", page);
+  params.set("limit", $("limit").value);
+
+  if ($("q").value.trim()) params.set("q", $("q").value.trim());
+  if ($("fStatus").value) params.set("status", $("fStatus").value);
+  if ($("fPriority").value) params.set("priority", $("fPriority").value);
+  if ($("sort").value) params.set("sort", $("sort").value);
+
+  const r = await fetch("/api/tasks?" + params.toString(), { headers: authHeaders() });
+  const data = await r.json();
+  if (!r.ok) {
+    $("tasks").innerHTML = `<div class="card bad">Error: ${data.message || "failed"}</div>`;
+    return;
+  }
+
+  $("pageInfo").textContent = `page ${page}`;
+
+  if (!data.length) {
+    $("tasks").innerHTML = `<div class="card muted">No tasks found</div>`;
+    return;
+  }
+
+  $("tasks").innerHTML = data.map(t => {
+    const due = formatDate(t.dueDate);
+    const isDone = t.status === "done";
+    return `
+      <div class="task ${(!isDone && due !== "-" && due < new Date().toISOString().slice(0,10)) ? "danger" : ""}">
+        <div>
+          <div style="font-weight:700">${t.title}</div>
+          <div class="muted">${t.description || ""}</div>
+          <div class="row" style="margin-top:8px">
+            ${badge("status: " + t.status)}
+            ${badge("priority: " + t.priority)}
+            ${badge("due: " + due)}
+          </div>
+        </div>
+        <div class="right">
+          <button onclick='editTask(${JSON.stringify(t)})'>Edit</button>
+          <button onclick='delTask("${t._id}")'>Delete</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+$("btnCreate").addEventListener("click", async () => {
+  const payload = {
+    title: $("title").value.trim(),
+    description: $("description").value.trim(),
+    priority: $("priority").value,
+    status: $("status").value,
+    dueDate: $("dueDate").value ? new Date($("dueDate").value).toISOString() : undefined
+  };
+
+  if (!payload.title) {
+    $("msg").textContent = "Title is required";
+    return;
+  }
+
+  const r = await fetch("/api/tasks", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+
+  const data = await r.json();
+  if (!r.ok) {
+    $("msg").textContent = "❌ " + (data.message || "create failed");
+    return;
+  }
+
+  $("title").value = "";
+  $("description").value = "";
+  $("dueDate").value = "";
+  $("msg").innerHTML = `<span class="ok">Created!</span>`;
+  page = 1;
+  loadTasks();
+});
+
+window.delTask = async (id) => {
+  if (!confirm("Delete this task?")) return;
+
+  const r = await fetch("/api/tasks/" + id, {
+    method: "DELETE",
+    headers: authHeaders()
+  });
+
+  const data = await r.json();
+  if (!r.ok) {
+    alert(data.message || "delete failed");
+    return;
+  }
+  loadTasks();
+};
+
+window.editTask = async (t) => {
+  const title = prompt("New title:", t.title);
+  if (title === null) return;
+
+  const status = prompt("New status (pending / in_progress / done):", t.status);
+  if (status === null) return;
+
+  const r = await fetch("/api/tasks/" + t._id, {
+    method: "PUT",
+    headers: authHeaders(),
+    body: JSON.stringify({ title, status })
+  });
+
+  const data = await r.json();
+  if (!r.ok) {
+    alert(data.message || "update failed");
+    return;
+  }
+  loadTasks();
+};
+
+$("btnApply").addEventListener("click", () => { page = 1; loadTasks(); });
+$("btnReset").addEventListener("click", () => {
+  $("q").value = "";
+  $("fStatus").value = "";
+  $("fPriority").value = "";
+  $("sort").value = "newest";
+  $("limit").value = "5";
+  page = 1;
+  loadTasks();
+});
+
+$("prev").addEventListener("click", () => {
+  if (page > 1) { page--; loadTasks(); }
+});
+$("next").addEventListener("click", () => {
+  page++; loadTasks();
+});
+
+$("btnOverdue").addEventListener("click", async () => {
+  const r = await fetch("/api/tasks/smart/overdue", {
+    method: "POST",
+    headers: authHeaders()
+  });
+  const data = await r.json();
+  if (!r.ok) { alert(data.message || "failed"); return; }
+  alert("Done. Modified: " + data.modified);
+  loadTasks();
+});
+
+$("btnLogout").addEventListener("click", () => {
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  location.href = "/login.html";
+});
+
+loadTasks();
+</script>
+</body>
+</html>
