@@ -234,16 +234,5 @@ Environment variables must be configured in the hosting platform before deployme
 
 ---
 
-## Author
 
-Final Project
-Web Backend Development
-Smart Task Manager
-
-```
-
----
-
-Если хочешь — могу сделать версию уровня “университетский проект с архитектурным обоснованием”, чтобы преподаватель вообще не к чему не придрался.
-```
 
